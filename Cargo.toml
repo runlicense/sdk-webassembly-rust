@@ -1,0 +1,30 @@
+[package]
+name = "runlicense-sdk-webassembly-rust"
+version = "0.1.9"
+edition = "2024"
+description = "Rust SDK for verifying RunLicense Ed25519-signed licenses in WebAssembly applications"
+license = "MIT"
+repository = "https://github.com/runlicense/sdk-webassembly-rust"
+keywords = ["license", "wasm", "webassembly", "ed25519", "verification"]
+categories = ["wasm", "authentication"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ed25519-dalek = { version = "2", default-features = false, features = ["alloc"] }
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = { version = "0.10", default-features = false }
+web-sys = { version = "0.3", features = ["console", "Window", "Location", "Request", "RequestInit", "Response", "Headers", "Crypto", "Storage"], optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+js-sys = { version = "0.3", optional = true }
+
+[features]
+wasm = ["web-sys", "wasm-bindgen", "wasm-bindgen-futures", "js-sys"]
+
+[dev-dependencies]
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
