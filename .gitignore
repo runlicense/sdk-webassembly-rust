@@ -1,6 +1,13 @@
 /target
 Cargo.lock
 
+# Keys and secrets
+keys/
+*.key
+*.pem
+.env
+.env.*
+
 # IDE / editor / tool config
 .idea/
 .vscode/
