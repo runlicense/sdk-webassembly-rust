@@ -14,12 +14,12 @@ pub(crate) use __internal::{console_log, console_warn};
 
 // --- Public macros ---
 
-/// Verify a license passed at runtime, namespaced for cache isolation.
+/// Verify a license passed at runtime.
 ///
 /// The license JSON is provided at runtime (typically passed from JavaScript),
 /// while the public key (`keys/runlicense.key`) is embedded at compile time.
-/// The namespace isolates localStorage caching so multiple licensed WASM
-/// modules can coexist in the same application.
+/// localStorage caching is automatically namespaced by `product_id` from the
+/// license payload, so multiple licensed WASM modules coexist without collision.
 ///
 /// **In WASM** (with the `wasm` feature): performs full verification including
 /// signature, status/expiry, domain authorization, and phone-home validation.
@@ -32,19 +32,18 @@ pub(crate) use __internal::{console_log, console_warn};
 ///
 /// ```ignore
 /// // WASM (async) — license_json is passed from JavaScript at runtime:
-/// let token = verify_license!(license_json, "acme/image-processor").await?;
+/// let token = verify_license!(license_json).await?;
 ///
 /// // Non-WASM (sync):
-/// verify_license!(license_json, "acme/image-processor")?;
+/// verify_license!(license_json)?;
 /// ```
 #[cfg(feature = "wasm")]
 #[macro_export]
 macro_rules! verify_license {
-    ($license_json:expr, $namespace:expr) => {{
+    ($license_json:expr) => {{
         $crate::__internal::verify_license_full_with_key(
             $license_json,
             include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/keys/runlicense.key")).trim(),
-            $namespace,
         )
     }};
 }
@@ -55,7 +54,7 @@ macro_rules! verify_license {
 #[cfg(not(feature = "wasm"))]
 #[macro_export]
 macro_rules! verify_license {
-    ($license_json:expr, $namespace:expr) => {{
+    ($license_json:expr) => {{
         $crate::__internal::verify_license_detailed_with_key(
             $license_json,
             include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/keys/runlicense.key")).trim(),

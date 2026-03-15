@@ -284,7 +284,6 @@ async fn do_phone_home(
 pub async fn verify_license_full_with_key(
     license_json: &str,
     public_key_b64: &str,
-    namespace: &str,
 ) -> Result<ValidationToken, LicenseVerificationError> {
     console_log("[runlicense] ══════════════════════════════════════════");
     console_log("[runlicense] Starting full license verification");
@@ -294,6 +293,9 @@ pub async fn verify_license_full_with_key(
     console_log("[runlicense] Step 1/4: Verifying license signature...");
     let payload = parse_license_payload_with_key(license_json, public_key_b64)?;
     console_log("[runlicense] License signature valid");
+
+    // Derive cache namespace from product_id for localStorage isolation
+    let namespace = &payload.product_id;
 
     // Step 2: Check status and expiry
     console_log("[runlicense] Step 2/4: Checking license status and expiry...");
