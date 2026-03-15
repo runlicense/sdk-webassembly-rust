@@ -1,6 +1,6 @@
 [package]
 name = "runlicense-sdk-webassembly-rust"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 description = "Rust SDK for verifying RunLicense Ed25519-signed licenses in WebAssembly applications"
 license = "MIT"
