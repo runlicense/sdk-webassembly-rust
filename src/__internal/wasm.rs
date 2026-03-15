@@ -41,18 +41,23 @@ fn generate_nonce() -> String {
 
 // --- localStorage cache helpers ---
 
-const CACHE_KEY_TOKEN: &str = "runlicense_cached_token";
-const CACHE_KEY_RAW: &str = "runlicense_cached_token_raw";
-
 fn get_local_storage() -> Option<web_sys::Storage> {
     web_sys::window()?.local_storage().ok()?
 }
 
-fn cache_token(raw_token: &str, token_data: &ValidationToken) {
+fn cache_key_token(namespace: &str) -> String {
+    format!("runlicense/{namespace}/cached_token")
+}
+
+fn cache_key_raw(namespace: &str) -> String {
+    format!("runlicense/{namespace}/cached_token_raw")
+}
+
+fn cache_token(namespace: &str, raw_token: &str, token_data: &ValidationToken) {
     if let Some(storage) = get_local_storage() {
         if let Ok(json) = serde_json::to_string(token_data) {
-            let _ = storage.set_item(CACHE_KEY_TOKEN, &json);
-            let _ = storage.set_item(CACHE_KEY_RAW, raw_token);
+            let _ = storage.set_item(&cache_key_token(namespace), &json);
+            let _ = storage.set_item(&cache_key_raw(namespace), raw_token);
             console_log("[runlicense]   Cached validation token in localStorage");
         }
     } else {
@@ -60,14 +65,14 @@ fn cache_token(raw_token: &str, token_data: &ValidationToken) {
     }
 }
 
-fn load_cached_token() -> Option<ValidationToken> {
+fn load_cached_token(namespace: &str) -> Option<ValidationToken> {
     let storage = get_local_storage()?;
-    let json = storage.get_item(CACHE_KEY_TOKEN).ok()??;
+    let json = storage.get_item(&cache_key_token(namespace)).ok()??;
     let token: ValidationToken = serde_json::from_str(&json).ok()?;
     if is_iso8601_expired(&token.expires_at) {
         console_log("[runlicense]   Cached token found but expired");
-        let _ = storage.remove_item(CACHE_KEY_TOKEN);
-        let _ = storage.remove_item(CACHE_KEY_RAW);
+        let _ = storage.remove_item(&cache_key_token(namespace));
+        let _ = storage.remove_item(&cache_key_raw(namespace));
         None
     } else {
         console_log(&format!(
@@ -78,17 +83,23 @@ fn load_cached_token() -> Option<ValidationToken> {
     }
 }
 
-fn clear_cached_token() {
+fn clear_cached_token(namespace: &str) {
     if let Some(storage) = get_local_storage() {
-        let _ = storage.remove_item(CACHE_KEY_TOKEN);
-        let _ = storage.remove_item(CACHE_KEY_RAW);
+        let _ = storage.remove_item(&cache_key_token(namespace));
+        let _ = storage.remove_item(&cache_key_raw(namespace));
         console_log("[runlicense]   Cleared cached token from localStorage");
     }
 }
 
 // --- Auto-renewal ---
 
-fn schedule_renewal(activation_url: String, public_key: String, license_id: String, ttl_secs: u64) {
+fn schedule_renewal(
+    namespace: String,
+    activation_url: String,
+    public_key: String,
+    license_id: String,
+    ttl_secs: u64,
+) {
     use std::cell::RefCell;
     use std::rc::Rc;
     use wasm_bindgen::JsCast;
@@ -118,9 +129,9 @@ fn schedule_renewal(activation_url: String, public_key: String, license_id: Stri
             let nonce = generate_nonce();
             match do_phone_home(&activation_url, &nonce, &public_key, &license_id).await {
                 Ok((token_data, raw_token)) => {
-                    cache_token(&raw_token, &token_data);
+                    cache_token(&namespace, &raw_token, &token_data);
                     console_log("[runlicense] Auto-renewal: success — token refreshed");
-                    schedule_renewal(activation_url, public_key, license_id, ttl_secs);
+                    schedule_renewal(namespace, activation_url, public_key, license_id, ttl_secs);
                 }
                 Err(LicenseVerificationError::ServerRejected(ref msg)) => {
                     console_warn(&format!(
@@ -129,7 +140,7 @@ fn schedule_renewal(activation_url: String, public_key: String, license_id: Stri
                     console_warn(
                         "[runlicense] LICENSE REVOKED — cached token cleared, next activation will fail",
                     );
-                    clear_cached_token();
+                    clear_cached_token(&namespace);
                 }
                 Err(LicenseVerificationError::InvalidValidationToken)
                 | Err(LicenseVerificationError::ValidationTokenNonceMismatch)
@@ -138,12 +149,12 @@ fn schedule_renewal(activation_url: String, public_key: String, license_id: Stri
                         "[runlicense] Auto-renewal: token verification failed — possible tampering",
                     );
                     console_warn("[runlicense] Cached token cleared — next activation will fail");
-                    clear_cached_token();
+                    clear_cached_token(&namespace);
                 }
                 Err(e) => {
                     console_warn(&format!("[runlicense] Auto-renewal: network error — {e}"));
                     console_log("[runlicense] Auto-renewal: retrying in 30s...");
-                    schedule_renewal(activation_url, public_key, license_id, 30);
+                    schedule_renewal(namespace, activation_url, public_key, license_id, 30);
                 }
             }
         });
@@ -273,6 +284,7 @@ async fn do_phone_home(
 pub async fn verify_license_full_with_key(
     license_json: &str,
     public_key_b64: &str,
+    namespace: &str,
 ) -> Result<ValidationToken, LicenseVerificationError> {
     console_log("[runlicense] ══════════════════════════════════════════");
     console_log("[runlicense] Starting full license verification");
@@ -388,9 +400,10 @@ pub async fn verify_license_full_with_key(
 
     match do_phone_home(&activation_url, &nonce, public_key_b64, &payload.license_id).await {
         Ok((token_data, raw_token)) => {
-            cache_token(&raw_token, &token_data);
+            cache_token(namespace, &raw_token, &token_data);
             let ttl = payload.token_ttl.unwrap_or(3600);
             schedule_renewal(
+                namespace.to_string(),
                 activation_url.clone(),
                 public_key_b64.to_string(),
                 payload.license_id.clone(),
@@ -404,7 +417,7 @@ pub async fn verify_license_full_with_key(
         }
         Err(LicenseVerificationError::ServerRejected(ref msg)) => {
             console_warn(&format!("[runlicense] Server rejected: {msg}"));
-            clear_cached_token();
+            clear_cached_token(namespace);
             Err(LicenseVerificationError::ServerRejected(msg.clone()))
         }
         Err(LicenseVerificationError::InvalidValidationToken)
@@ -413,7 +426,7 @@ pub async fn verify_license_full_with_key(
             console_warn(
                 "[runlicense] Server response token failed verification — possible tampering",
             );
-            clear_cached_token();
+            clear_cached_token(namespace);
             Err(LicenseVerificationError::InvalidValidationToken)
         }
         Err(ref phone_home_err) => {
@@ -422,13 +435,13 @@ pub async fn verify_license_full_with_key(
             ));
             console_log("[runlicense]   Checking for cached validation token...");
 
-            match load_cached_token() {
+            match load_cached_token(namespace) {
                 Some(cached_token) => {
                     if cached_token.license_id != payload.license_id {
                         console_warn(
                             "[runlicense] Cached token is for a different license — ignoring",
                         );
-                        clear_cached_token();
+                        clear_cached_token(namespace);
                         return Err(LicenseVerificationError::PhoneHomeFailed(
                             "network error and no valid cached token".into(),
                         ));
@@ -438,6 +451,7 @@ pub async fn verify_license_full_with_key(
                         cached_token.expires_at
                     ));
                     schedule_renewal(
+                        namespace.to_string(),
                         activation_url.clone(),
                         public_key_b64.to_string(),
                         payload.license_id.clone(),

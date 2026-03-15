@@ -14,9 +14,11 @@ pub(crate) use __internal::{console_log, console_warn};
 
 // --- Public macros ---
 
-/// Verify a license using the public key at `keys/runlicense.key` in the consuming project root.
+/// Verify a license by namespace.
 ///
-/// The key file is embedded at compile time.
+/// Discovers the license file at `runlicense/<namespace>/license.json` in the
+/// consuming crate's root directory. Both the license and the public key
+/// (`keys/runlicense.key`) are embedded at compile time.
 ///
 /// **In WASM** (with the `wasm` feature): performs full verification including
 /// signature, status/expiry, domain authorization, and phone-home validation.
@@ -29,29 +31,84 @@ pub(crate) use __internal::{console_log, console_warn};
 ///
 /// ```ignore
 /// // WASM (async):
-/// let token = runlicense_sdk_webassembly_rust::verify_license!(license_json).await?;
+/// let token = runlicense_sdk_webassembly_rust::verify_license!("acme/image-processor").await?;
 ///
 /// // Non-WASM (sync):
-/// runlicense_sdk_webassembly_rust::verify_license!(license_json)?;
+/// runlicense_sdk_webassembly_rust::verify_license!("acme/image-processor")?;
 /// ```
 #[cfg(feature = "wasm")]
 #[macro_export]
 macro_rules! verify_license {
-    ($license_json:expr) => {{
+    ($namespace:literal) => {{
         $crate::__internal::verify_license_full_with_key(
-            $license_json,
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/runlicense/",
+                $namespace,
+                "/license.json"
+            )),
             include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/keys/runlicense.key")).trim(),
+            $namespace,
         )
     }};
 }
 
-/// Verify a license (non-WASM path).
+/// Verify a license by namespace (non-WASM path).
 ///
 /// See [`verify_license!`] for full documentation.
 #[cfg(not(feature = "wasm"))]
 #[macro_export]
 macro_rules! verify_license {
-    ($license_json:expr) => {{
+    ($namespace:literal) => {{
+        $crate::__internal::verify_license_detailed_with_key(
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/runlicense/",
+                $namespace,
+                "/license.json"
+            )),
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/keys/runlicense.key")).trim(),
+        )
+    }};
+}
+
+/// Verify a license from a JSON string directly.
+///
+/// Use this when you already have the license JSON (e.g., fetched from an API
+/// or loaded dynamically). Performs the same verification as [`verify_license!`]
+/// but without compile-time file discovery.
+///
+/// The `namespace` parameter is used to namespace localStorage caching in WASM
+/// so that multiple licensed packages do not collide.
+///
+/// # Example
+///
+/// ```ignore
+/// // WASM (async):
+/// let token = runlicense_sdk_webassembly_rust::verify_license_json!(license_json, "acme/image-processor").await?;
+///
+/// // Non-WASM (sync):
+/// runlicense_sdk_webassembly_rust::verify_license_json!(license_json)?;
+/// ```
+#[cfg(feature = "wasm")]
+#[macro_export]
+macro_rules! verify_license_json {
+    ($license_json:expr, $namespace:expr) => {{
+        $crate::__internal::verify_license_full_with_key(
+            $license_json,
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/keys/runlicense.key")).trim(),
+            $namespace,
+        )
+    }};
+}
+
+/// Verify a license from a JSON string directly (non-WASM path).
+///
+/// See [`verify_license_json!`] for full documentation.
+#[cfg(not(feature = "wasm"))]
+#[macro_export]
+macro_rules! verify_license_json {
+    ($license_json:expr, $namespace:expr) => {{
         $crate::__internal::verify_license_detailed_with_key(
             $license_json,
             include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/keys/runlicense.key")).trim(),
@@ -59,34 +116,33 @@ macro_rules! verify_license {
     }};
 }
 
-/// Generate a `main()` function for a CLI binary that validates a license JSON string
+/// Generate a `main()` function for a CLI binary that validates a namespaced license
 /// against the public key at `keys/runlicense.key` in the consuming project.
 ///
 /// The consuming project creates `src/bin/validate_license.rs` containing:
 ///
 /// ```ignore
-/// runlicense_sdk_webassembly_rust::validate_license_main!();
+/// runlicense_sdk_webassembly_rust::validate_license_main!("acme/image-processor");
 /// ```
 ///
 /// Then runs:
 ///
 /// ```sh
-/// cargo run --bin validate_license -- '{"payload":"...","signature":"..."}'
+/// cargo run --bin validate_license
 /// ```
 #[macro_export]
 macro_rules! validate_license_main {
-    () => {
+    ($namespace:literal) => {
         fn main() {
-            let license_json = match ::std::env::args().nth(1) {
-                Some(json) => json,
-                None => {
-                    eprintln!("Usage: validate_license '<license_json>'");
-                    ::std::process::exit(1);
-                }
-            };
+            let license_json = include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/runlicense/",
+                $namespace,
+                "/license.json"
+            ));
 
             match $crate::__internal::verify_license_detailed_with_key(
-                license_json.as_str(),
+                license_json,
                 include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/keys/runlicense.key")).trim(),
             ) {
                 Ok(()) => {
