@@ -6,7 +6,7 @@
 use serde::Deserialize;
 
 use super::{
-    console_log, console_warn, is_iso8601_expired, parse_license_payload_with_key,
+    console_log, console_warn, is_iso8601_expired, parse_license_payload_with_key, sign_nonce,
     verify_validation_token,
 };
 use crate::{LicenseVerificationError, ValidationToken};
@@ -170,7 +170,12 @@ async fn do_phone_home(
     use wasm_bindgen::JsValue;
     use wasm_bindgen_futures::JsFuture;
 
-    let body = serde_json::json!({ "nonce": nonce }).to_string();
+    let nonce_signature = sign_nonce(nonce, public_key_b64)?;
+    let body = serde_json::json!({
+        "nonce": nonce,
+        "nonce_signature": nonce_signature,
+    })
+    .to_string();
     console_log(&format!("[runlicense]   POST {activation_url}"));
 
     let opts = web_sys::RequestInit::new();

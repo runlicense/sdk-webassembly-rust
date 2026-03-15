@@ -2,7 +2,9 @@ use super::__internal;
 use super::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ed25519_dalek::SigningKey;
+use hmac::{Hmac, Mac};
 use rand::rngs::OsRng;
+use sha2::Sha256;
 
 fn make_test_license(signing_key: &SigningKey, payload: &str) -> String {
     use ed25519_dalek::Signer;
@@ -488,6 +490,72 @@ fn date_string_conversion_is_correct() {
         "2000-01-01"
     );
     assert_eq!(__internal::unix_secs_to_date_string(0), "1970-01-01");
+}
+
+// --- Nonce signing tests ---
+
+#[test]
+fn sign_nonce_produces_valid_hex() {
+    let sk = SigningKey::generate(&mut OsRng);
+    let pk_b64 = pub_key_b64(&sk);
+
+    let signature = __internal::sign_nonce("test-nonce", &pk_b64).unwrap();
+    // HMAC-SHA256 produces 32 bytes = 64 hex chars
+    assert_eq!(signature.len(), 64);
+    assert!(signature.chars().all(|c| c.is_ascii_hexdigit()));
+}
+
+#[test]
+fn sign_nonce_is_deterministic() {
+    let sk = SigningKey::generate(&mut OsRng);
+    let pk_b64 = pub_key_b64(&sk);
+
+    let sig1 = __internal::sign_nonce("same-nonce", &pk_b64).unwrap();
+    let sig2 = __internal::sign_nonce("same-nonce", &pk_b64).unwrap();
+    assert_eq!(sig1, sig2);
+}
+
+#[test]
+fn sign_nonce_differs_for_different_nonces() {
+    let sk = SigningKey::generate(&mut OsRng);
+    let pk_b64 = pub_key_b64(&sk);
+
+    let sig1 = __internal::sign_nonce("nonce-a", &pk_b64).unwrap();
+    let sig2 = __internal::sign_nonce("nonce-b", &pk_b64).unwrap();
+    assert_ne!(sig1, sig2);
+}
+
+#[test]
+fn sign_nonce_differs_for_different_keys() {
+    let sk1 = SigningKey::generate(&mut OsRng);
+    let sk2 = SigningKey::generate(&mut OsRng);
+
+    let sig1 = __internal::sign_nonce("same-nonce", &pub_key_b64(&sk1)).unwrap();
+    let sig2 = __internal::sign_nonce("same-nonce", &pub_key_b64(&sk2)).unwrap();
+    assert_ne!(sig1, sig2);
+}
+
+#[test]
+fn sign_nonce_matches_server_algorithm() {
+    // Verify against a known HMAC-SHA256 value to ensure compatibility
+    // with the server's hash_hmac('sha256', nonce, base64_decode(public_key))
+    let sk = SigningKey::generate(&mut OsRng);
+    let pk_b64 = pub_key_b64(&sk);
+    let key_bytes = BASE64.decode(pk_b64.trim()).unwrap();
+
+    let nonce = "test-nonce-value";
+    let mut mac = <Hmac<Sha256>>::new_from_slice(&key_bytes).unwrap();
+    mac.update(nonce.as_bytes());
+    let expected = hex_encode(&mac.finalize().into_bytes());
+
+    let actual = __internal::sign_nonce(nonce, &pk_b64).unwrap();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn sign_nonce_rejects_invalid_key() {
+    let result = __internal::sign_nonce("nonce", "not-valid-base64!!!");
+    assert_eq!(result, Err(LicenseVerificationError::InvalidPublicKey));
 }
 
 // --- Validation token tests ---

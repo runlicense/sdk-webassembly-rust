@@ -6,9 +6,13 @@
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use hmac::{Hmac, Mac};
 use serde::Deserialize;
+use sha2::Sha256;
 
 use crate::{LicensePayload, LicenseVerificationError, ValidationToken, VerificationError};
+
+type HmacSha256 = Hmac<Sha256>;
 
 #[cfg(feature = "wasm")]
 mod wasm;
@@ -33,6 +37,27 @@ pub(crate) fn console_warn(msg: &str) {
 struct LicenseJson {
     payload: serde_json::Value,
     signature: String,
+}
+
+/// HMAC-SHA256 sign a nonce using the base64-encoded public key.
+///
+/// Returns the hex-encoded signature. The server verifies this by recomputing
+/// the same HMAC with its copy of the public key.
+pub fn sign_nonce(
+    nonce: &str,
+    public_key_b64: &str,
+) -> Result<String, LicenseVerificationError> {
+    let key_bytes = BASE64.decode(public_key_b64.trim()).map_err(|_| {
+        LicenseVerificationError::InvalidPublicKey
+    })?;
+
+    let mut mac = HmacSha256::new_from_slice(&key_bytes).map_err(|_| {
+        LicenseVerificationError::InvalidPublicKey
+    })?;
+    mac.update(nonce.as_bytes());
+
+    let result = mac.finalize();
+    Ok(crate::hex_encode(&result.into_bytes()))
 }
 
 /// Verify the Ed25519 signature of a license JSON string.
