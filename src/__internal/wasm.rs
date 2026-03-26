@@ -243,7 +243,12 @@ async fn do_phone_home(
 
         let error_msg = serde_json::from_str::<serde_json::Value>(&body_text)
             .ok()
-            .and_then(|v| v.get("message")?.as_str().map(String::from))
+            .and_then(|v| {
+                v.get("meta")
+                    .and_then(|m| m.get("message"))
+                    .or_else(|| v.get("message"))
+                    .and_then(|m| m.as_str().map(String::from))
+            })
             .unwrap_or(body_text);
 
         return Err(LicenseVerificationError::ServerRejected(format!(
@@ -265,8 +270,13 @@ async fn do_phone_home(
     })?;
 
     #[derive(Deserialize)]
-    struct PhoneHomeResponse {
+    struct PhoneHomeResponseData {
         token: String,
+    }
+
+    #[derive(Deserialize)]
+    struct PhoneHomeResponse {
+        data: PhoneHomeResponseData,
     }
 
     let response: PhoneHomeResponse = serde_json::from_str(&body_str)
@@ -274,7 +284,7 @@ async fn do_phone_home(
 
     console_log("[runlicense]   Verifying server token...");
     let token_data =
-        verify_validation_token(&response.token, public_key_b64, nonce, expected_license_id)?;
+        verify_validation_token(&response.data.token, public_key_b64, nonce, expected_license_id)?;
 
     Ok((token_data, response.token))
 }
