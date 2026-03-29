@@ -9,6 +9,9 @@ pub use types::*;
 #[doc(hidden)]
 pub mod __internal;
 
+#[cfg(feature = "tools")]
+pub mod wit_gen;
+
 #[cfg(feature = "wasm")]
 pub(crate) use __internal::{console_log, console_warn};
 
@@ -116,12 +119,74 @@ macro_rules! validate_license_main {
 /// ```sh
 /// cargo run --bin generate_manifest -- pkg/app_bg.wasm
 /// ```
+///
+/// With WIT generation (requires `tools` feature):
+///
+/// ```sh
+/// cargo run --features tools --bin generate_manifest -- pkg/app_bg.wasm --src src --package mycompany:my-module
+/// ```
 #[macro_export]
 macro_rules! generate_manifest_main {
     () => {
         fn main() {
-            let wasm_path = match ::std::env::args().nth(1) {
-                Some(p) => ::std::path::PathBuf::from(p),
+            let args: Vec<String> = ::std::env::args().collect();
+
+            let mut wasm_path: Option<::std::path::PathBuf> = None;
+            let mut src_dir: Option<::std::path::PathBuf> = None;
+            let mut package = "local:module".to_string();
+            let mut world = "module".to_string();
+            let mut interface_name = "api".to_string();
+            let mut wit_output: Option<::std::path::PathBuf> = None;
+
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--src" => {
+                        i += 1;
+                        src_dir = Some(::std::path::PathBuf::from(&args[i]));
+                    }
+                    "--package" => {
+                        i += 1;
+                        package = args[i].clone();
+                    }
+                    "--world" => {
+                        i += 1;
+                        world = args[i].clone();
+                    }
+                    "--interface" => {
+                        i += 1;
+                        interface_name = args[i].clone();
+                    }
+                    "--wit-output" => {
+                        i += 1;
+                        wit_output = Some(::std::path::PathBuf::from(&args[i]));
+                    }
+                    "--help" | "-h" => {
+                        eprintln!(
+                            "Usage: generate_manifest <path/to/app_bg.wasm> [options]\n\
+                             \n\
+                             Options:\n\
+                             \x20 --src <dir>          Rust source directory (enables WIT generation)\n\
+                             \x20 --package <name>     WIT package name (default: local:module)\n\
+                             \x20 --world <name>       WIT world name (default: module)\n\
+                             \x20 --interface <name>   WIT interface name (default: api)\n\
+                             \x20 --wit-output <path>  Output .wit file path"
+                        );
+                        ::std::process::exit(0);
+                    }
+                    arg if !arg.starts_with('-') && wasm_path.is_none() => {
+                        wasm_path = Some(::std::path::PathBuf::from(arg));
+                    }
+                    other => {
+                        eprintln!("Unknown argument: {other}");
+                        ::std::process::exit(1);
+                    }
+                }
+                i += 1;
+            }
+
+            let wasm_path = match wasm_path {
+                Some(p) => p,
                 None => {
                     eprintln!("Usage: generate_manifest <path/to/app_bg.wasm>");
                     ::std::process::exit(1);
@@ -163,6 +228,66 @@ macro_rules! generate_manifest_main {
                     );
                     ::std::process::exit(1);
                 }
+            }
+
+            // WIT generation when --src is provided
+            #[cfg(feature = "tools")]
+            if let Some(src_dir) = src_dir {
+                if !src_dir.exists() {
+                    eprintln!(
+                        "[wit] Error: source directory does not exist: {}",
+                        src_dir.display()
+                    );
+                    ::std::process::exit(1);
+                }
+
+                let config = $crate::wit_gen::WitConfig {
+                    package,
+                    world,
+                    interface_name,
+                };
+
+                println!("[wit] Scanning source directory: {}", src_dir.display());
+
+                let doc = match $crate::wit_gen::generate_wit(&wasm_bytes, &src_dir, config) {
+                    Ok(doc) => doc,
+                    Err(e) => {
+                        eprintln!("[wit] Error: {e}");
+                        ::std::process::exit(1);
+                    }
+                };
+
+                println!("[wit] Found {} exported function(s)", doc.functions.len());
+
+                let wit_content = doc.render();
+
+                let wit_path = wit_output.unwrap_or_else(|| {
+                    wasm_path
+                        .parent()
+                        .unwrap_or(::std::path::Path::new("."))
+                        .join("module.wit")
+                });
+
+                match ::std::fs::write(&wit_path, &wit_content) {
+                    Ok(()) => {
+                        println!("[wit] Wrote WIT file to {}", wit_path.display());
+                        println!();
+                        print!("{wit_content}");
+                    }
+                    Err(e) => {
+                        eprintln!("[wit] Failed to write {}: {e}", wit_path.display());
+                        ::std::process::exit(1);
+                    }
+                }
+            }
+
+            #[cfg(not(feature = "tools"))]
+            if src_dir.is_some() {
+                eprintln!(
+                    "[wit] WIT generation requires the 'tools' feature. \
+                     Rebuild with: cargo run --features tools --bin generate_manifest -- ..."
+                );
+                ::std::process::exit(1);
             }
         }
     };

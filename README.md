@@ -200,6 +200,112 @@ The app is never interrupted mid-session. Revocation takes effect on the next ac
 
 The server controls the grace period length via the `expires_at` field on the validation token. A longer `expires_at` means more offline tolerance; a shorter one means tighter enforcement.
 
+## WIT interface generation
+
+When distributing WASM modules through a marketplace or execution environment, the host needs to know how to interact with your module — what functions it exports, what parameters they take, and what they return. A raw `.wasm` binary only contains low-level type information (`i32`, `f64`), not the rich types your Rust code actually uses.
+
+The SDK solves this with a **WIT (WebAssembly Interface Types) generator** that produces a `.wit` file describing your module's public interface. WIT is the standard interface definition language for the [WebAssembly Component Model](https://component-model.bytecodealliance.org/).
+
+### Why a WIT file is needed
+
+A compiled WASM binary exports functions like:
+
+```
+(func $calculate_total (param i32 i32 f64) (result i32))
+```
+
+An execution environment can see that this function exists, but it has no idea what those parameters mean. The WIT file bridges that gap:
+
+```wit
+package mycompany:pricing;
+
+interface api {
+  /// Calculate the total price for a list of items after applying a discount.
+  calculate-total: func(prices-json: string, quantity: u32, discount-percent: f64) -> string;
+}
+
+world module {
+  export api;
+}
+```
+
+With this file, a marketplace platform can:
+
+- **Generate a preview UI** with correctly labeled input fields and types
+- **Validate capability requirements** before running the module
+- **Catalog and search** modules by their exported interface
+- **Sandbox execution** by only providing the imports the module declares it needs
+
+### How it works
+
+The generator combines two sources of information:
+
+1. **WASM binary introspection** — parses the compiled `.wasm` to discover which functions are actually exported (the authoritative list)
+2. **Rust source parsing** — scans your `.rs` files for `#[wasm_bindgen]` annotated functions, extracting doc comments, parameter names, and rich Rust types which are mapped to WIT types
+
+The Rust-to-WIT type mapping:
+
+| Rust type | WIT type |
+|---|---|
+| `String`, `&str` | `string` |
+| `bool` | `bool` |
+| `u8`, `u16`, `u32`, `u64` | `u8`, `u16`, `u32`, `u64` |
+| `i8`, `i16`, `i32`, `i64` | `s8`, `s16`, `s32`, `s64` |
+| `f32`, `f64` | `f32`, `f64` |
+| `Vec<T>` | `list<T>` |
+| `Option<T>` | `option<T>` |
+| `Result<T, E>` | `result<T, E>` |
+
+### Generating a WIT file
+
+WIT generation is built into `generate_manifest`. Pass `--src` to enable it (requires the `tools` feature):
+
+```sh
+cargo run --features tools --bin generate_manifest -- pkg/app_bg.wasm --src src --package mycompany:my-module
+```
+
+This produces both `wasm_manifest.json` (integrity hash) and `module.wit` (interface description) in a single step.
+
+Options:
+
+| Flag | Description | Default |
+|---|---|---|
+| `<wasm_path>` | Path to compiled `.wasm` binary (required) | — |
+| `--src <dir>` | Rust source directory to scan (enables WIT generation) | — |
+| `--package <name>` | WIT package name | `local:module` |
+| `--world <name>` | WIT world name | `module` |
+| `--interface <name>` | WIT interface name | `api` |
+| `--wit-output <path>` | Output `.wit` file path | alongside wasm as `module.wit` |
+
+### Using the macro in your project
+
+Add the `tools` feature to your dependency:
+
+```toml
+[dependencies]
+runlicense-sdk-webassembly-rust = { git = "https://github.com/runlicense/sdk-webassembly-rust", features = ["wasm", "tools"] }
+```
+
+Create `src/bin/generate_manifest.rs`:
+
+```rust
+runlicense_sdk_webassembly_rust::generate_manifest_main!();
+```
+
+Then run it as part of your build process:
+
+```sh
+# Build WASM first
+wasm-pack build --target web
+
+# Generate integrity manifest + WIT interface file
+cargo run --features tools --bin generate_manifest -- pkg/app_bg.wasm --src src --package mycompany:my-module
+```
+
+Without the `tools` feature or without `--src`, it behaves exactly as before — only generating the integrity manifest.
+
+The resulting `.wit` file ships alongside your `.wasm` binary when submitting to a marketplace.
+
 ## WASM integrity check
 
 The SDK can also verify that the WASM binary hasn't been tampered with:
@@ -262,7 +368,11 @@ runlicense_sdk_webassembly_rust::generate_manifest_main!();
 ```
 
 ```sh
+# Integrity manifest only
 cargo run --bin generate_manifest -- pkg/app_bg.wasm
+
+# Integrity manifest + WIT interface file (requires tools feature)
+cargo run --features tools --bin generate_manifest -- pkg/app_bg.wasm --src src --package mycompany:my-module
 ```
 
 ## Features
@@ -270,6 +380,7 @@ cargo run --bin generate_manifest -- pkg/app_bg.wasm
 | Feature | Description |
 |---|---|
 | `wasm` | Enables the full WASM verification pipeline: browser console logging, `window.location` hostname detection, Fetch API for phone-home, `localStorage` for token caching, auto-renewal via `setTimeout`. Pulls in `web-sys`, `wasm-bindgen`, `wasm-bindgen-futures`, `js-sys`. **Required for WASM projects.** |
+| `tools` | Enables the WIT generation toolchain: WASM binary introspection, Rust source parsing, and `.wit` file generation. Pulls in `wasmparser`, `syn`, `walkdir`, `quote`. **Required for `generate_wit` binary.** |
 
 ## API reference
 
@@ -279,7 +390,7 @@ cargo run --bin generate_manifest -- pkg/app_bg.wasm
 |---|---|
 | `verify_license!(json)` | Full async license verification — returns `Result<ValidationToken, LicenseVerificationError>` |
 | `validate_license_main!()` | Generate a CLI `main()` for license validation |
-| `generate_manifest_main!()` | Generate a CLI `main()` for WASM manifest generation |
+| `generate_manifest_main!()` | Generate a CLI `main()` for WASM manifest + optional WIT generation |
 
 ### Functions
 
@@ -287,3 +398,7 @@ cargo run --bin generate_manifest -- pkg/app_bg.wasm
 |---|---|
 | `verify_wasm_integrity(wasm_bytes, manifest_json)` | Verify WASM binary against a SHA-256 manifest |
 | `compute_wasm_sha256(wasm_bytes)` | Compute SHA-256 hash of WASM bytes |
+| `wit_gen::generate_wit(wasm_bytes, src_dir, config)` | Generate WIT from WASM binary + Rust source (requires `tools` feature) |
+| `wit_gen::generate_wit_from_source(src_dir, config)` | Generate WIT from Rust source only (requires `tools` feature) |
+| `wit_gen::extract_wasm_exports(wasm_bytes)` | Extract exported function names from a WASM binary (requires `tools` feature) |
+| `wit_gen::parse_rust_sources(src_dir)` | Parse Rust source files for `#[wasm_bindgen]` function metadata (requires `tools` feature) |

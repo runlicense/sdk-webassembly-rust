@@ -25,6 +25,28 @@ js-sys = { version = "0.3", optional = true }
 
 [features]
 wasm = ["web-sys", "wasm-bindgen", "wasm-bindgen-futures", "js-sys"]
+tools = ["dep:wasmparser", "dep:syn", "dep:walkdir", "dep:quote"]
+
+[dependencies.wasmparser]
+version = "0.225"
+optional = true
+
+[dependencies.syn]
+version = "2"
+features = ["full", "parsing"]
+optional = true
+
+[dependencies.quote]
+version = "1"
+optional = true
+
+[dependencies.walkdir]
+version = "2"
+optional = true
+
+[[bin]]
+name = "generate_manifest"
+path = "src/bin/generate_manifest.rs"
 
 [dev-dependencies]
 ed25519-dalek = { version = "2", features = ["rand_core"] }
