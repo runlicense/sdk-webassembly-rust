@@ -23,9 +23,9 @@ jobs:
 
       - name: Update Cargo.toml version
         run: |
-          sed -i "s/^version = \".*\"/version = \"${{ steps.version.outputs.version }}\"/" Cargo.toml
+          sed -i "0,/^version = \".*\"/{s/^version = \".*\"/version = \"${{ steps.version.outputs.version }}\"/}" Cargo.toml
           echo "Updated Cargo.toml to version ${{ steps.version.outputs.version }}"
-          grep '^version' Cargo.toml
+          head -5 Cargo.toml
 
       - name: Commit version bump
         run: |
