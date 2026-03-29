@@ -148,12 +148,7 @@ pub fn parse_rust_sources(src_dir: &Path) -> Result<Vec<WitFunction>, String> {
     for entry in WalkDir::new(src_dir)
         .into_iter()
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .map(|ext| ext == "rs")
-                .unwrap_or(false)
-        })
+        .filter(|e| e.path().extension().map(|ext| ext == "rs").unwrap_or(false))
     {
         let source = std::fs::read_to_string(entry.path())
             .map_err(|e| format!("Failed to read {}: {e}", entry.path().display()))?;
@@ -164,23 +159,22 @@ pub fn parse_rust_sources(src_dir: &Path) -> Result<Vec<WitFunction>, String> {
         for item in &file.items {
             match item {
                 syn::Item::Fn(func) => {
-                    if has_wasm_bindgen_attr(&func.attrs) && is_pub(&func.vis) {
-                        if let Some(wit_func) = extract_function_metadata(&func.sig, &func.attrs) {
-                            functions.push(wit_func);
-                        }
+                    if has_wasm_bindgen_attr(&func.attrs)
+                        && is_pub(&func.vis)
+                        && let Some(wit_func) = extract_function_metadata(&func.sig, &func.attrs)
+                    {
+                        functions.push(wit_func);
                     }
                 }
                 syn::Item::Impl(impl_block) => {
                     if has_wasm_bindgen_attr(&impl_block.attrs) {
                         for impl_item in &impl_block.items {
-                            if let syn::ImplItem::Fn(method) = impl_item {
-                                if is_pub_impl(&method.vis) {
-                                    if let Some(wit_func) =
-                                        extract_function_metadata(&method.sig, &method.attrs)
-                                    {
-                                        functions.push(wit_func);
-                                    }
-                                }
+                            if let syn::ImplItem::Fn(method) = impl_item
+                                && is_pub_impl(&method.vis)
+                                && let Some(wit_func) =
+                                    extract_function_metadata(&method.sig, &method.attrs)
+                            {
+                                functions.push(wit_func);
                             }
                         }
                     }
@@ -230,10 +224,7 @@ pub fn generate_wit(
 /// Generate a WIT document from Rust source files only (no WASM binary validation).
 ///
 /// Useful during development when the WASM binary may not exist yet.
-pub fn generate_wit_from_source(
-    src_dir: &Path,
-    config: WitConfig,
-) -> Result<WitDocument, String> {
+pub fn generate_wit_from_source(src_dir: &Path, config: WitConfig) -> Result<WitDocument, String> {
     let functions = parse_rust_sources(src_dir)?;
     Ok(WitDocument { config, functions })
 }
@@ -267,12 +258,11 @@ fn extract_doc_comments(attrs: &[syn::Attribute]) -> Option<String> {
             if !attr.path().is_ident("doc") {
                 return None;
             }
-            if let syn::Meta::NameValue(nv) = &attr.meta {
-                if let syn::Expr::Lit(lit) = &nv.value {
-                    if let syn::Lit::Str(s) = &lit.lit {
-                        return Some(s.value());
-                    }
-                }
+            if let syn::Meta::NameValue(nv) = &attr.meta
+                && let syn::Expr::Lit(lit) = &nv.value
+                && let syn::Lit::Str(s) = &lit.lit
+            {
+                return Some(s.value());
             }
             None
         })
@@ -285,8 +275,8 @@ fn extract_doc_comments(attrs: &[syn::Attribute]) -> Option<String> {
         let trimmed: Vec<String> = docs
             .iter()
             .map(|line| {
-                if line.starts_with(' ') {
-                    line[1..].to_string()
+                if let Some(stripped) = line.strip_prefix(' ') {
+                    stripped.to_string()
                 } else {
                     line.to_string()
                 }
@@ -327,11 +317,7 @@ fn extract_function_metadata(
         syn::ReturnType::Default => None,
         syn::ReturnType::Type(_, ty) => {
             let wit = syn_type_to_wit(ty);
-            if wit == "()" {
-                None
-            } else {
-                Some(wit)
-            }
+            if wit == "()" { None } else { Some(wit) }
         }
     };
 
@@ -406,10 +392,10 @@ fn ref_type_to_wit(type_ref: &syn::TypeReference) -> String {
 }
 
 fn extract_first_generic_arg(segment: &syn::PathSegment) -> String {
-    if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-        if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-            return syn_type_to_wit(inner);
-        }
+    if let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+        && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
+    {
+        return syn_type_to_wit(inner);
     }
     "/* unknown */".to_string()
 }

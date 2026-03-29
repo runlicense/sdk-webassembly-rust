@@ -43,17 +43,13 @@ struct LicenseJson {
 ///
 /// Returns the hex-encoded signature. The server verifies this by recomputing
 /// the same HMAC with its copy of the public key.
-pub fn sign_nonce(
-    nonce: &str,
-    public_key_b64: &str,
-) -> Result<String, LicenseVerificationError> {
-    let key_bytes = BASE64.decode(public_key_b64.trim()).map_err(|_| {
-        LicenseVerificationError::InvalidPublicKey
-    })?;
+pub fn sign_nonce(nonce: &str, public_key_b64: &str) -> Result<String, LicenseVerificationError> {
+    let key_bytes = BASE64
+        .decode(public_key_b64.trim())
+        .map_err(|_| LicenseVerificationError::InvalidPublicKey)?;
 
-    let mut mac = HmacSha256::new_from_slice(&key_bytes).map_err(|_| {
-        LicenseVerificationError::InvalidPublicKey
-    })?;
+    let mut mac = HmacSha256::new_from_slice(&key_bytes)
+        .map_err(|_| LicenseVerificationError::InvalidPublicKey)?;
     mac.update(nonce.as_bytes());
 
     let result = mac.finalize();

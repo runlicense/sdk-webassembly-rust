@@ -283,8 +283,12 @@ async fn do_phone_home(
         .map_err(|_| LicenseVerificationError::PhoneHomeFailed("invalid response JSON".into()))?;
 
     console_log("[runlicense]   Verifying server token...");
-    let token_data =
-        verify_validation_token(&response.data.token, public_key_b64, nonce, expected_license_id)?;
+    let token_data = verify_validation_token(
+        &response.data.token,
+        public_key_b64,
+        nonce,
+        expected_license_id,
+    )?;
 
     Ok((token_data, response.data.token))
 }
