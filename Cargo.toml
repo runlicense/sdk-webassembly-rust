@@ -1,6 +1,6 @@
 [package]
 name = "runlicense-sdk-webassembly-rust"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 description = "Rust SDK for verifying RunLicense Ed25519-signed licenses in WebAssembly applications"
 license = "MIT"
@@ -28,20 +28,20 @@ wasm = ["web-sys", "wasm-bindgen", "wasm-bindgen-futures", "js-sys"]
 tools = ["dep:wasmparser", "dep:syn", "dep:walkdir", "dep:quote"]
 
 [dependencies.wasmparser]
-version = "0.225"
+version = "0.5.1"
 optional = true
 
 [dependencies.syn]
-version = "2"
+version = "0.5.1"
 features = ["full", "parsing"]
 optional = true
 
 [dependencies.quote]
-version = "1"
+version = "0.5.1"
 optional = true
 
 [dependencies.walkdir]
-version = "2"
+version = "0.5.1"
 optional = true
 
 [[bin]]
