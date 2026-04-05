@@ -44,6 +44,8 @@ pub enum LicenseVerificationError {
     ValidationTokenExpired,
     ValidationTokenLicenseMismatch,
     ServerRejected(String),
+    LicenseFileNotFound(String),
+    LicenseFileReadError(String),
 }
 
 impl core::fmt::Display for LicenseVerificationError {
@@ -70,6 +72,8 @@ impl core::fmt::Display for LicenseVerificationError {
                 write!(f, "validation token license_id mismatch")
             }
             Self::ServerRejected(msg) => write!(f, "server rejected validation: {msg}"),
+            Self::LicenseFileNotFound(path) => write!(f, "license file not found: {path}"),
+            Self::LicenseFileReadError(msg) => write!(f, "failed to read license file: {msg}"),
         }
     }
 }

@@ -293,6 +293,66 @@ async fn do_phone_home(
     Ok((token_data, response.data.token))
 }
 
+// --- Path-based license loading (WASM) ---
+
+/// Fetch `license.json` from a URL path and run full verification.
+///
+/// In a browser, `dir` is treated as a URL path (e.g. `"./assets"` or `"/modules/my-module"`).
+/// The function fetches `<dir>/license.json` via the Fetch API, then delegates to
+/// [`verify_license_full_with_key`].
+pub async fn verify_license_from_path_with_key(
+    dir: &str,
+    public_key_b64: &str,
+) -> Result<ValidationToken, LicenseVerificationError> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+
+    let url = format!("{}/license.json", dir.trim_end_matches('/'));
+    console_log(&format!("[runlicense] Fetching license from: {url}"));
+
+    let window = web_sys::window().ok_or_else(|| {
+        console_warn("[runlicense] No window object available for fetch");
+        LicenseVerificationError::LicenseFileReadError("no window object".into())
+    })?;
+
+    let resp_value = JsFuture::from(window.fetch_with_str(&url))
+        .await
+        .map_err(|e| {
+            let msg = format!("{:?}", e);
+            console_warn(&format!("[runlicense] Failed to fetch license file: {msg}"));
+            LicenseVerificationError::LicenseFileReadError(msg)
+        })?;
+
+    let resp: web_sys::Response = resp_value.dyn_into().map_err(|_| {
+        LicenseVerificationError::LicenseFileReadError("invalid response type".into())
+    })?;
+
+    if !resp.ok() {
+        let status = resp.status();
+        if status == 404 {
+            return Err(LicenseVerificationError::LicenseFileNotFound(url));
+        }
+        return Err(LicenseVerificationError::LicenseFileReadError(format!(
+            "HTTP {status} fetching {url}"
+        )));
+    }
+
+    let body = JsFuture::from(resp.text().map_err(|_| {
+        LicenseVerificationError::LicenseFileReadError("failed to read response body".into())
+    })?)
+    .await
+    .map_err(|e| {
+        LicenseVerificationError::LicenseFileReadError(format!("{:?}", e))
+    })?;
+
+    let license_json = body.as_string().ok_or_else(|| {
+        LicenseVerificationError::LicenseFileReadError("response body is not a string".into())
+    })?;
+
+    console_log("[runlicense] License file loaded, starting verification...");
+    verify_license_full_with_key(&license_json, public_key_b64).await
+}
+
 // --- Full verification (WASM) ---
 
 pub async fn verify_license_full_with_key(

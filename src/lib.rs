@@ -65,6 +65,30 @@ macro_rules! verify_license {
     }};
 }
 
+/// Verify a license by fetching `license.json` from the given URL path.
+///
+/// The public key (`keys/runlicense.key`) is embedded at compile time.
+/// At runtime, the macro fetches `<dir>/license.json` via the Fetch API
+/// and runs full verification (signature, status/expiry, domain, phone-home).
+///
+/// Returns `Result<ValidationToken, LicenseVerificationError>` and must be `.await`ed.
+///
+/// # Example
+///
+/// ```ignore
+/// // Fetch license.json relative to the module:
+/// let token = verify_license_from_path!("./assets").await?;
+/// ```
+#[macro_export]
+macro_rules! verify_license_from_path {
+    ($dir:expr) => {{
+        $crate::__internal::verify_license_from_path_with_key(
+            $dir,
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/keys/runlicense.key")).trim(),
+        )
+    }};
+}
+
 /// Generate a `main()` function for a CLI binary that validates a license JSON
 /// string against the public key at `keys/runlicense.key` in the consuming project.
 ///

@@ -21,6 +21,10 @@ mod wasm;
 pub use wasm::verify_license_full_with_key;
 
 #[cfg(feature = "wasm")]
+pub use wasm::verify_license_from_path_with_key;
+
+
+#[cfg(feature = "wasm")]
 pub(crate) use wasm::get_wasm_hostname;
 
 #[cfg(feature = "wasm")]
